@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portfolio Tagger</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#F8F9FA; --paper:#FFFFFF; --ink:#111827; --mute:#6B7280; --line:#111827; --soft:#D1D5DB; --del:#B91C1C;
+          --sans:'Inter','Helvetica Neue',Arial,sans-serif; --mono:'JetBrains Mono','Roboto Mono',ui-monospace,monospace; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--ink); font:14px/1.4 var(--sans); }
+  button, input, select, textarea { font:inherit; color:inherit; }
+  button { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; background:var(--paper);
+           border:1px solid var(--line); padding:6px 10px; cursor:pointer; }
+  button:hover { background:var(--ink); color:var(--paper); }
+  button.primary, button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }
+  button.danger { border-color:var(--del); color:var(--del); }
+  button.danger:hover { background:var(--del); color:#fff; }
+  input, select, textarea { border:1px solid var(--soft); background:var(--paper); padding:5px 7px; border-radius:0; min-width:0; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--ink); }
+  .meta, label { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--mute); }
+
+  header { position:sticky; top:0; z-index:5; background:var(--paper); border-bottom:1px solid var(--line); }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 16px; }
+  .bar + .bar { border-top:1px solid var(--soft); }
+  .bar h1 { font-size:15px; font-weight:600; margin-right:8px; }
+  .grow { flex:1; }
+  .seg { display:flex; } .seg button + button { border-left:0; }
+  #bulk { background:var(--ink); color:var(--paper); }
+  #bulk .meta { color:#9CA3AF; }
+  #bulk input, #bulk select { border-color:#4B5563; background:#1F2937; }
+  #bulk button { background:transparent; border-color:#9CA3AF; }
+  #bulk button:hover { background:var(--paper); color:var(--ink); }
+  #bulk button.danger { border-color:#F87171; color:#F87171; }
+  #bulk button.danger:hover { background:#F87171; color:var(--ink); }
+  #bulk .sep { width:1px; align-self:stretch; background:#4B5563; }
+  #bulk[hidden], #draft[hidden] { display:none; }
+  #draft { background:#FEF3C7; }
+
+  main { padding:16px; }
+  /* Rows view: full editing */
+  .rows { display:flex; flex-direction:column; gap:10px; }
+  .row { display:grid; grid-template-columns:28px 180px 1fr; gap:14px; background:var(--paper); border:1px solid var(--soft); padding:12px; }
+  .row img { width:180px; height:180px; object-fit:contain; background:var(--bg); display:block; }
+  .fields { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px 12px; align-content:start; }
+  .fields .wide { grid-column:1 / -1; }
+  .fields label { display:flex; flex-direction:column; gap:3px; }
+  .fields textarea { resize:vertical; min-height:44px; font-family:var(--sans); }
+  .line { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .pos { width:70px; font-family:var(--mono); }
+  .src { font-family:var(--mono); font-size:10px; color:var(--mute); word-break:break-all; }
+  .more { display:block; margin:10px auto 0; }
+  /* Arrange view: compact tiles in site order, drag to reorder */
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:8px; }
+  .tile { position:relative; background:var(--paper); border:1px solid var(--soft); cursor:grab; user-select:none; }
+  .tile > * { pointer-events:none; } /* keep drag offsets relative to the tile itself */
+  .tile img { display:block; width:100%; aspect-ratio:1; object-fit:cover; pointer-events:none; }
+  .tile .num { position:absolute; top:0; left:0; background:var(--paper); font-family:var(--mono); font-size:10px; padding:2px 5px; border:1px solid var(--soft); border-width:0 1px 1px 0; }
+  .tile .cap { font-family:var(--mono); font-size:10px; padding:3px 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tile.drop-before { box-shadow:-5px 0 0 var(--ink); }
+  .tile.drop-after { box-shadow:5px 0 0 var(--ink); }
+  .tile.dragging { opacity:.3; }
+  /* Shared states */
+  .sel { border-color:var(--ink) !important; outline:2px solid var(--ink); outline-offset:-2px; }
+  .hid { opacity:.45; }
+  .del { opacity:.4; border-color:var(--del) !important; background:repeating-linear-gradient(135deg, transparent 0 8px, rgba(185,28,28,.07) 8px 16px); }
+  .del img { filter:grayscale(1); }
+  @media (max-width:800px) { .row { grid-template-columns:28px 1fr; } .row .fields { grid-column:1 / -1; } .fields { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>Tagger</h1>
+    <div class="seg"><button id="modeRows" type="button" aria-pressed="true">Edit</button><button id="modeTiles" type="button" aria-pressed="false">Arrange</button></div>
+    <select id="view">
+      <option value="all">All</option><option value="todo">Needs process/material</option>
+      <option value="hidden">Hidden</option><option value="del">Marked for delete</option>
+    </select>
+    <select id="folder"><option value="">All folders</option></select>
+    <input id="q" type="search" placeholder="Search title, tags, file…" size="22">
+    <span id="count" class="meta"></span>
+    <button id="selAll" type="button">Select all shown</button>
+    <span class="grow"></span>
+    <span id="status" class="meta">No changes</span>
+    <button id="save" class="primary" type="button">Save data.js</button>
+  </div>
+  <div class="bar" id="draft" hidden>
+    <span id="draftMsg"></span><span class="grow"></span><button id="draftDiscard" type="button">Discard those edits</button>
+  </div>
+  <div class="bar" id="bulk" hidden>
+    <span id="selCount" class="meta"></span>
+    <select id="bCat"><option value="process">Process</option><option value="material">Material</option><option value="itemType">Item Type</option></select>
+    <input id="bVal" placeholder="Tag, tag…" size="14">
+    <button id="bAdd" type="button">Add tag</button>
+    <button id="bRemove" type="button">Remove tag</button>
+    <span class="sep"></span>
+    <input id="bTitle" placeholder="Title" size="14">
+    <button id="bSetTitle" type="button">Set title</button>
+    <span class="sep"></span>
+    <button id="bTop" type="button">Move to top</button>
+    <input id="bPos" type="number" min="1" placeholder="#" style="width:70px">
+    <button id="bMove" type="button">Move to #</button>
+    <button id="bBottom" type="button">Bottom</button>
+    <span class="sep"></span>
+    <button id="bHide" type="button">Hide</button>
+    <button id="bShow" type="button">Show</button>
+    <button id="bDelete" class="danger" type="button">Delete</button>
+    <button id="bUndelete" type="button">Undo delete</button>
+    <button id="bClear" type="button">Deselect</button>
+  </div>
+</header>
+<main id="list"></main>
+<datalist id="dl-process"></datalist><datalist id="dl-material"></datalist><datalist id="dl-itemType"></datalist>
+
+<script src="data.js"></script>
+<script>
+const CATS = { process:'Process', material:'Material', itemType:'Item Type' };
+const PAGE = 40;
+const DRAFT_KEY = 'portfolio-tagger-draft';
+const byId = new Map(portfolioData.map(d => [d.id, d]));
+const savedDeleted = new Set(typeof deletedIds !== 'undefined' ? deletedIds : []);
+const selected = new Set(), toDelete = new Set();
+let edited = new Set(), orderDirty = false, shownList = [], rendered = 0, lastClicked = -1, fileHandle = null, mode = 'rows';
+const $ = id => document.getElementById(id);
+const el = (tag, attrs = {}, ...kids) => { const e = Object.assign(document.createElement(tag), attrs); e.append(...kids); return e; };
+const splitTags = s => [...new Set(s.split(',').map(t => t.trim()).filter(Boolean))];
+const folderOf = d => d.source.split('/').slice(0, 2).join(' / ');
+const thumb = d => el('img', { loading:'lazy', alt:'', src:d.imageSrc.replace('/full/', '/thumb/') }); // loading before src
+const posOf = id => portfolioData.findIndex(d => d.id === id);
+
+/* ---------- Unsaved-work tracking + draft safety net (localStorage) ---------- */
+const dirty = () => edited.size || orderDirty || toDelete.size;
+function setStatus() {
+  const bits = [edited.size && `${edited.size} edited`, orderDirty && 'order changed', toDelete.size && `${toDelete.size} to delete`].filter(Boolean);
+  $('status').textContent = bits.length ? bits.join(' · ') + ' (unsaved)' : 'No changes';
+}
+function storeDraft() {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      edited:[...edited].map(id => byId.get(id)), order:orderDirty ? portfolioData.map(d => d.id) : null, toDelete:[...toDelete] }));
+  } catch {}
+}
+function changed({ ids = [], order = false } = {}) {
+  ids.forEach(id => edited.add(id));
+  if (order) orderDirty = true;
+  storeDraft(); setStatus();
+}
+function applyOrder(ids) { // unknown ids (added by a later sync) keep their place at the end
+  const rank = new Map(ids.map((id, i) => [id, i]));
+  portfolioData.sort((a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9));
+}
+(function restoreDraft() {
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch {}
+  if (!draft) return;
+  const eds = (draft.edited || []).filter(d => byId.has(d.id));
+  const dels = (draft.toDelete || []).filter(id => byId.has(id));
+  if (!eds.length && !draft.order && !dels.length) return;
+  const backup = { items:eds.map(d => structuredClone(byId.get(d.id))), order:portfolioData.map(d => d.id) };
+  eds.forEach(d => Object.assign(byId.get(d.id), d));
+  if (draft.order) applyOrder(draft.order);
+  edited = new Set(eds.map(d => d.id)); orderDirty = !!draft.order; dels.forEach(id => toDelete.add(id));
+  setStatus();
+  $('draftMsg').textContent = `Restored unsaved work from your last session (${$('status').textContent.replace(' (unsaved)', '')}). Save to keep it.`;
+  $('draft').hidden = false;
+  $('draftDiscard').onclick = () => {
+    backup.items.forEach(d => Object.assign(byId.get(d.id), d));
+    applyOrder(backup.order);
+    edited.clear(); toDelete.clear(); orderDirty = false;
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    $('draft').hidden = true; setStatus(); refresh();
+  };
+})();
+
+/* ---------- Save: writes data.js in place (Chrome/Edge), else downloads it ---------- */
+function serialize() {
+  const keep = portfolioData.filter(d => !toDelete.has(d.id));
+  const gone = [...new Set([...savedDeleted, ...toDelete])].sort();
+  return '// Generated by tools/sync.py and edited by tag.html. One item per line, array order = site order.\n' +
+         `const deletedIds = ${JSON.stringify(gone)};\n` +
+         'const portfolioData = [\n' + keep.map(d => JSON.stringify(d)).join(',\n') + '\n];\n';
+}
+async function save() {
+  const text = serialize();
+  try {
+    if (window.showSaveFilePicker) {
+      fileHandle ??= await showSaveFilePicker({ suggestedName:'data.js', types:[{ description:'data.js', accept:{ 'text/javascript':['.js'] } }] });
+      const w = await fileHandle.createWritable(); await w.write(text); await w.close();
+    } else {
+      el('a', { href:URL.createObjectURL(new Blob([text], { type:'text/javascript' })), download:'data.js' }).click();
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') $('status').textContent = `Save failed: ${e.message}`;
+    return; // nothing written, draft kept
+  }
+  const nDel = toDelete.size;
+  toDelete.forEach(id => { savedDeleted.add(id); selected.delete(id); byId.delete(id); });
+  for (let i = portfolioData.length - 1; i >= 0; i--) if (savedDeleted.has(portfolioData[i].id)) portfolioData.splice(i, 1);
+  edited.clear(); toDelete.clear(); orderDirty = false;
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
+  $('draft').hidden = true;
+  setStatus();
+  $('status').textContent = `Saved ${new Date().toLocaleTimeString()}` +
+    (window.showSaveFilePicker ? '' : ' (downloaded: move it into the portfolio folder)') +
+    (nDel ? ` · run tools/sync.py to remove ${nDel} deleted image file(s)` : '');
+  refresh(false);
+}
+$('save').onclick = save;
+addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); } });
+addEventListener('beforeunload', e => { if (dirty()) e.preventDefault(); });
+
+/* ---------- Reorder + delete primitives ---------- */
+function moveTo(ids, index) { // ids keep their relative order; index is in the list *without* them
+  const set = new Set(ids);
+  const moving = portfolioData.filter(d => set.has(d.id));
+  const rest = portfolioData.filter(d => !set.has(d.id));
+  rest.splice(Math.max(0, Math.min(index, rest.length)), 0, ...moving);
+  portfolioData.splice(0, portfolioData.length, ...rest);
+  changed({ order:true });
+}
+function moveBefore(ids, targetId, after) {
+  const set = new Set(ids);
+  const idx = portfolioData.filter(d => !set.has(d.id)).findIndex(d => d.id === targetId);
+  moveTo(ids, idx + (after ? 1 : 0));
+}
+function markDelete(ids, on) { ids.forEach(id => on ? toDelete.add(id) : toDelete.delete(id)); changed(); }
+
+/* ---------- Autocomplete lists from tags already in use ---------- */
+function refreshDatalists() {
+  for (const k in CATS)
+    $('dl-' + k).replaceChildren(...[...new Set(portfolioData.flatMap(d => d.tags[k]))].sort().map(v => el('option', { value:v })));
+}
+$('bCat').onchange = () => $('bVal').setAttribute('list', 'dl-' + $('bCat').value);
+$('bCat').onchange();
+
+/* ---------- Selection (click / shift-click for a range) ---------- */
+function toggleSelect(d, index, shift, on) {
+  const ids = shift && lastClicked >= 0
+    ? shownList.slice(Math.min(lastClicked, index), Math.max(lastClicked, index) + 1).map(x => x.id) : [d.id];
+  ids.forEach(id => on ? selected.add(id) : selected.delete(id));
+  lastClicked = index;
+  refresh(false);
+}
+const stateClass = d => (selected.has(d.id) ? ' sel' : '') + (d.hidden ? ' hid' : '') + (toDelete.has(d.id) ? ' del' : '');
+
+/* ---------- Edit view: one editable row per photo ---------- */
+function row(d, index) {
+  const r = el('article', { className:'row' + stateClass(d) });
+  const check = el('input', { type:'checkbox', checked:selected.has(d.id), title:'Select (shift-click for a range)' });
+  check.onclick = e => toggleSelect(d, index, e.shiftKey, check.checked);
+  const field = (label, input, cls = '') => el('label', { className:cls }, label, input);
+  const text = (value, onSet, attrs = {}) => {
+    const { tag = 'input', list, ...rest } = attrs;
+    const i = el(tag, { value, ...rest });
+    if (list) i.setAttribute('list', list); // `list` is read-only as a property
+    i.onchange = () => { onSet(i.value); changed({ ids:[d.id] }); if (list) refreshDatalists(); };
+    return i;
+  };
+  const company = el('select', {}, ...['Fully', 'Trillium Pacific'].map(c => el('option', { value:c, textContent:c, selected:d.company === c })));
+  company.onchange = () => { d.company = company.value; changed({ ids:[d.id] }); };
+  const hidden = el('input', { type:'checkbox', checked:d.hidden });
+  hidden.onchange = () => { d.hidden = hidden.checked; changed({ ids:[d.id] }); refresh(false); };
+  const pos = el('input', { className:'pos', type:'number', min:1, max:portfolioData.length, value:posOf(d.id) + 1, title:'Position on the site. Type a number + Enter to move.' });
+  pos.onchange = () => { moveTo([d.id], (parseInt(pos.value, 10) || 1) - 1); refresh(false); };
+  const dying = toDelete.has(d.id);
+  const del = el('button', { type:'button', className:dying ? '' : 'danger', textContent:dying ? 'Undo delete' : 'Delete' });
+  del.onclick = () => { markDelete([d.id], !dying); refresh(false); };
+
+  r.append(check,
+    el('a', { href:d.imageSrc, target:'_blank', title:'Open full size' }, thumb(d)),
+    el('div', { className:'fields' },
+      field('Title', text(d.title, v => d.title = v.trim())),
+      field('Company', company),
+      el('div', { className:'line' }, el('span', { className:'meta', textContent:'#' }), pos,
+        el('label', { className:'line' }, hidden, 'Hidden'), del),
+      field('Description', text(d.description, v => d.description = v.trim(), { tag:'textarea', rows:2 }), 'wide'),
+      ...Object.entries(CATS).map(([k, label]) =>
+        field(label + ' (comma separated)', text(d.tags[k].join(', '), v => d.tags[k] = splitTags(v), { list:'dl-' + k }))),
+      el('div', { className:'src wide', textContent:d.source })));
+  return r;
+}
+
+/* ---------- Arrange view: drag tiles to reorder (dragging a selected tile moves the whole selection) ---------- */
+let dragIds = null;
+function tile(d, index) {
+  const t = el('div', { className:'tile' + stateClass(d), draggable:true, title:`${d.title}\n${d.source}` },
+    thumb(d), el('span', { className:'num', textContent:posOf(d.id) + 1 }), el('div', { className:'cap', textContent:d.title }));
+  t.onclick = e => toggleSelect(d, index, e.shiftKey, !selected.has(d.id));
+  t.ondragstart = e => {
+    dragIds = selected.has(d.id) ? portfolioData.filter(x => selected.has(x.id)).map(x => x.id) : [d.id];
+    e.dataTransfer.effectAllowed = 'move';
+    requestAnimationFrame(() => dragIds.forEach(id => $('list').querySelector(`[data-id="${id}"]`)?.classList.add('dragging')));
+  };
+  t.ondragend = () => { dragIds = null; $('list').querySelectorAll('.dragging').forEach(x => x.classList.remove('dragging')); };
+  const after = e => e.offsetX > t.clientWidth / 2;
+  t.ondragover = e => {
+    if (!dragIds || dragIds.includes(d.id)) return;
+    e.preventDefault();
+    t.classList.toggle('drop-after', after(e)); t.classList.toggle('drop-before', !after(e));
+  };
+  t.ondragleave = () => t.classList.remove('drop-before', 'drop-after');
+  t.ondrop = e => { e.preventDefault(); const ids = dragIds; moveBefore(ids, d.id, after(e)); refresh(false); };
+  t.dataset.id = d.id;
+  return t;
+}
+
+/* ---------- Filtering + paging ---------- */
+function refresh(resetPage = true) {
+  const view = $('view').value, folder = $('folder').value, q = $('q').value.trim().toLowerCase();
+  shownList = portfolioData.filter(d =>
+    (view === 'hidden' ? d.hidden : view === 'del' ? toDelete.has(d.id)
+      : view === 'todo' ? !d.hidden && !toDelete.has(d.id) && !d.tags.process.length && !d.tags.material.length : true) &&
+    (!folder || folderOf(d) === folder) &&
+    (!q || [d.title, d.description, d.source, ...Object.values(d.tags).flat()].join(' ').toLowerCase().includes(q)));
+  const keep = resetPage ? PAGE : Math.max(rendered, PAGE);
+  const y = scrollY;
+  rendered = 0;
+  $('list').replaceChildren(el('div', { className:mode }));
+  renderMore(mode === 'tiles' ? shownList.length : keep); // tiles are tiny + lazy, so show them all
+  if (!resetPage) scrollTo(0, y);
+  $('count').textContent = `${shownList.length} / ${portfolioData.length} photos`;
+  updateBulk();
+}
+function renderMore(n = PAGE) {
+  const box = $('list').firstChild;
+  $('list').querySelector('.more')?.remove();
+  const next = shownList.slice(rendered, rendered + n);
+  box.append(...next.map((d, i) => (mode === 'tiles' ? tile : row)(d, rendered + i)));
+  rendered += next.length;
+  if (rendered < shownList.length) {
+    const b = el('button', { className:'more', type:'button', textContent:`Show ${Math.min(PAGE, shownList.length - rendered)} more (${shownList.length - rendered} left)` });
+    b.onclick = () => renderMore();
+    $('list').append(b);
+  }
+}
+function setMode(m) {
+  mode = m;
+  $('modeRows').setAttribute('aria-pressed', m === 'rows'); $('modeTiles').setAttribute('aria-pressed', m === 'tiles');
+  refresh();
+}
+$('modeRows').onclick = () => setMode('rows');
+$('modeTiles').onclick = () => setMode('tiles');
+$('folder').append(...[...new Set(portfolioData.map(folderOf))].sort().map(f => el('option', { value:f, textContent:f })));
+['view', 'folder'].forEach(id => $(id).onchange = () => refresh());
+let qTimer; $('q').oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(refresh, 200); };
+
+/* ---------- Bulk actions on the selection ---------- */
+function updateBulk() {
+  $('bulk').hidden = !selected.size;
+  $('selCount').textContent = `${selected.size} selected`;
+}
+const selIds = () => portfolioData.filter(d => selected.has(d.id)).map(d => d.id);
+function bulk(fn) {
+  const ids = selIds();
+  ids.forEach(id => fn(byId.get(id)));
+  changed({ ids }); refreshDatalists(); refresh(false);
+}
+$('selAll').onclick = () => { shownList.forEach(d => selected.add(d.id)); refresh(false); };
+$('bClear').onclick = () => { selected.clear(); refresh(false); };
+$('bAdd').onclick = () => { const k = $('bCat').value, vals = splitTags($('bVal').value);
+  if (vals.length) bulk(d => d.tags[k] = [...new Set([...d.tags[k], ...vals])]); };
+$('bRemove').onclick = () => { const k = $('bCat').value, vals = new Set(splitTags($('bVal').value));
+  if (vals.size) bulk(d => d.tags[k] = d.tags[k].filter(v => !vals.has(v))); };
+$('bSetTitle').onclick = () => { const t = $('bTitle').value.trim(); if (t) bulk(d => d.title = t); };
+$('bHide').onclick = () => bulk(d => d.hidden = true);
+$('bShow').onclick = () => bulk(d => d.hidden = false);
+$('bTop').onclick = () => { moveTo(selIds(), 0); refresh(false); };
+$('bBottom').onclick = () => { moveTo(selIds(), Infinity); refresh(false); };
+$('bMove').onclick = () => { const n = parseInt($('bPos').value, 10); if (n > 0) { moveTo(selIds(), n - 1); refresh(false); } };
+$('bDelete').onclick = () => { markDelete(selIds(), true); refresh(false); };
+$('bUndelete').onclick = () => { markDelete(selIds(), false); refresh(false); };
+
+refreshDatalists();
+refresh();
+</script>
+</body>
+</html>

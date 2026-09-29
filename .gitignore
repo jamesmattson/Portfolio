@@ -1,0 +1,6 @@
+# Original photos (~520 MB) stay on this machine; the site only needs images/ + data.js.
+Fully Images/
+TPM images/
+data.js.tmp
+__pycache__/
+prompt.txt
