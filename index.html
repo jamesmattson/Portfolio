@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Maker Portfolio</title>
+<title>J.R. Mattson | Maker Portfolio</title>
 <meta name="description" content="Design and fabrication work: CNC, furniture, architectural millwork, and product development.">
-<meta property="og:title" content="Maker Portfolio">
+<meta property="og:title" content="J.R. Mattson | Maker Portfolio">
 <meta property="og:description" content="Design and fabrication work: CNC, furniture, architectural millwork, and product development.">
 <meta property="og:type" content="website">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -44,7 +44,11 @@
   .tag[aria-pressed="true"] { background:var(--ink); color:var(--paper); }
   .reset { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em; background:none; border:0; padding:0; text-decoration:underline; }
   .reset[hidden] { display:none; }
-  .console-head > div { display:flex; align-items:baseline; gap:12px; }
+  .console-head > div { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .console-head .who { gap:4px 14px; }
+  .console-head .role { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--mute); }
+  .contact { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink); text-decoration:none; border-bottom:1px solid var(--line); }
+  .contact:hover { background:var(--ink); color:var(--paper); }
 
   /* ---------- Masonry ---------- */
   main { padding:var(--gap); }
@@ -78,6 +82,7 @@
   .lb-close:hover { background:var(--ink); color:var(--paper); }
 
   @media (max-width:760px) {
+    .console { position:static; } /* too tall to pin on a phone; it scrolls away with the page */
     .lb-box { inset:0; flex-direction:column; border:0; }
     .lb-img { flex:0 0 55%; border-right:0; border-bottom:1px solid var(--line); }
     .lb-side { flex:1 1 auto; }
@@ -149,7 +154,13 @@ reset.onclick = () => {
 
 app.append(
   $('header', { className:'console' },
-    $('div', { className:'console-head' }, $('h1', { textContent:'Maker Portfolio' }), $('div', {}, count, reset, themeBtn)),
+    $('div', { className:'console-head' },
+      $('div', { className:'who' },
+        $('h1', { textContent:'J.R. Mattson' }),
+        $('span', { className:'role', textContent:'Design + Fabrication' }),
+        $('a', { className:'contact', href:'mailto:james.mattson@gmail.com', textContent:'Email' }),
+        $('a', { className:'contact', href:'https://www.linkedin.com/in/j-r-mattson-95495b193/', target:'_blank', rel:'noopener', textContent:'LinkedIn' })),
+      $('div', {}, count, reset, themeBtn)),
     groupsEl),
   $('main', {}, grid, empty),
 );

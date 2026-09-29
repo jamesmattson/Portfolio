@@ -1,8 +1,10 @@
-# Maker Portfolio
+# J.R. Mattson | Maker Portfolio
 
 **Live site: https://jamesmattson.github.io/Portfolio/**
 
 A selection of design and fabrication work from Fully and Trillium Pacific: product development, CNC machining, furniture, architectural millwork, signage, and shop tooling.
+
+Contact: [james.mattson@gmail.com](mailto:james.mattson@gmail.com) · [LinkedIn](https://www.linkedin.com/in/j-r-mattson-95495b193/)
 
 ## How it's built
 
