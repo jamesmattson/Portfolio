@@ -4,3 +4,4 @@ TPM images/
 data.js.tmp
 __pycache__/
 prompt.txt
+_archive/

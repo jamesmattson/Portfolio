@@ -2,11 +2,13 @@
 
 Run from anywhere:  python tools/sync.py
 Safe to re-run: existing entries are never overwritten, new photos are inserted at random positions.
+Photos deleted in tag.html: web copies removed, originals moved to _archive/ (restore = move back + remove id from deletedIds).
 """
-import hashlib, json, os, random, sys
+import hashlib, json, os, random, shutil, sys
 from PIL import Image, ImageOps
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ARCHIVE = os.path.join(ROOT, "_archive")  # originals of deleted photos land here (gitignored, never auto-deleted)
 SOURCES = [("Fully", "Fully Images"), ("Trillium Pacific", "TPM images")]
 DATA = os.path.join(ROOT, "data.js")
 THUMB, FULL = os.path.join(ROOT, "images", "thumb"), os.path.join(ROOT, "images", "full")
@@ -67,6 +69,18 @@ def scan():
                     yield company, os.path.relpath(dp, base).replace("\\", "/").split("/")[0], rel
 
 
+def archive(rel):
+    """Move a source file to _archive/<same path>. Never overwrites; never deletes."""
+    dst = os.path.join(ARCHIVE, rel)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    base, ext = os.path.splitext(dst)
+    n = 1
+    while os.path.exists(dst):
+        dst = f"{base} ({n}){ext}"
+        n += 1
+    shutil.move(os.path.join(ROOT, rel), dst)
+
+
 def render(src, id_):
     """Write thumb + full JPEGs, return oriented (w, h)."""
     im = ImageOps.exif_transpose(Image.open(src))
@@ -97,16 +111,18 @@ def main():
                 purged += folder == FULL
     items = [d for d in items if d["id"] not in gone]
     by_id = {d["id"]: d for d in items}
-    seen, added, dupes = set(), 0, 0
-    for company, folder, rel in scan():
+    seen, added, dupes, archived = set(), 0, 0, 0
+    for company, folder, rel in list(scan()):  # list(): we may move files while iterating
         # ID = content hash: renaming or moving a file keeps its tags, exact duplicates collapse to one item.
         id_ = hashlib.sha1(open(os.path.join(ROOT, rel), "rb").read()).hexdigest()[:12]
+        if id_ in gone:  # deleted in tag.html: move the original (and any duplicate copies) to _archive/
+            archive(rel)
+            archived += 1
+            continue
         if id_ in seen:
             dupes += 1
             continue
         seen.add(id_)
-        if id_ in gone:
-            continue
         if id_ in by_id:
             by_id[id_]["source"] = rel  # follow moves/renames, touch nothing else
             continue
@@ -128,8 +144,8 @@ def main():
             save(items, deleted)  # checkpoint so a long first run can be interrupted and resumed
     save(items, deleted)
     missing = [d["source"] for d in items if d["id"] not in seen]
-    print(f"{len(items)} items | {added} new | {len(gone)} deleted ({purged} web copies removed this run) | "
-          f"{dupes} exact duplicates skipped | {len(missing)} with no source file (kept)")
+    print(f"{len(items)} items | {added} new | {len(gone)} deleted ({purged} web copies removed, {archived} originals "
+          f"moved to _archive/ this run) | {dupes} exact duplicates skipped | {len(missing)} with no source file (kept)")
 
 
 if __name__ == "__main__":
