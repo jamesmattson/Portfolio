@@ -68,6 +68,10 @@
   .hid { opacity:.45; }
   .del { opacity:.4; border-color:var(--del) !important; background:repeating-linear-gradient(135deg, transparent 0 8px, rgba(185,28,28,.07) 8px 16px); }
   .del img { filter:grayscale(1); }
+  .badge { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.05em; padding:2px 5px; color:#fff; background:var(--del); }
+  .badge.keep { background:#15803D; }
+  .tile .badge { position:absolute; top:0; right:0; max-width:75%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .reason { font-size:12px; color:var(--del); } .reason.keep { color:#15803D; }
   @media (max-width:800px) { .row { grid-template-columns:28px 1fr; } .row .fields { grid-column:1 / -1; } .fields { grid-template-columns:1fr; } }
 </style>
 </head>
@@ -84,6 +88,7 @@
     <input id="q" type="search" placeholder="Search title, tags, file…" size="22">
     <span id="count" class="meta"></span>
     <button id="selAll" type="button">Select all shown</button>
+    <button id="selSug" type="button" hidden>Select suggested removals</button>
     <span class="grow"></span>
     <span id="status" class="meta">No changes</span>
     <button id="save" class="primary" type="button">Save data.js</button>
@@ -110,6 +115,7 @@
     <button id="bShow" type="button">Show</button>
     <button id="bDelete" class="danger" type="button">Delete</button>
     <button id="bUndelete" type="button">Undo delete</button>
+    <button id="bDismiss" type="button" title="Hide these suggestions (the photos stay)">Dismiss suggestion</button>
     <button id="bClear" type="button">Deselect</button>
   </div>
 </header>
@@ -117,12 +123,18 @@
 <datalist id="dl-process"></datalist><datalist id="dl-material"></datalist><datalist id="dl-itemType"></datalist>
 
 <script src="data.js"></script>
+<script src="tools/suggestions.js"></script><!-- optional: first-pass cleanup suggestions -->
 <script>
 const CATS = { process:'Process', material:'Material', itemType:'Item Type' };
 const PAGE = 40;
 const DRAFT_KEY = 'portfolio-tagger-draft';
 const byId = new Map(portfolioData.map(d => [d.id, d]));
 const savedDeleted = new Set(typeof deletedIds !== 'undefined' ? deletedIds : []);
+const SUG = typeof suggestions !== 'undefined' ? suggestions : {};
+const DISMISS_KEY = 'portfolio-dismissed-suggestions';
+let dismissed = new Set();
+try { dismissed = new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); } catch {}
+const sugOf = d => !dismissed.has(d.id) && SUG[d.id];
 const selected = new Set(), toDelete = new Set();
 let edited = new Set(), orderDirty = false, shownList = [], rendered = 0, lastClicked = -1, fileHandle = null, mode = 'rows';
 const $ = id => document.getElementById(id);
@@ -203,6 +215,7 @@ async function save() {
   edited.clear(); toDelete.clear(); orderDirty = false;
   try { localStorage.removeItem(DRAFT_KEY); } catch {}
   $('draft').hidden = true;
+  const v = $('view').value; sugOptions(); $('view').value = [...$('view').options].some(o => o.value === v) ? v : 'all';
   setStatus();
   $('status').textContent = `Saved ${new Date().toLocaleTimeString()}` +
     (window.showSaveFilePicker ? '' : ' (downloaded: move it into the portfolio folder)') +
@@ -246,6 +259,7 @@ function toggleSelect(d, index, shift, on) {
   refresh(false);
 }
 const stateClass = d => (selected.has(d.id) ? ' sel' : '') + (d.hidden ? ' hid' : '') + (toDelete.has(d.id) ? ' del' : '');
+const badge = d => { const g = sugOf(d); return g ? [el('span', { className:'badge' + (g.keep ? ' keep' : ''), textContent:g.keep ? 'Keep' : g.cat, title:g.reason })] : []; };
 
 /* ---------- Edit view: one editable row per photo ---------- */
 function row(d, index) {
@@ -280,6 +294,7 @@ function row(d, index) {
       field('Description', text(d.description, v => d.description = v.trim(), { tag:'textarea', rows:2 }), 'wide'),
       ...Object.entries(CATS).map(([k, label]) =>
         field(label + ' (comma separated)', text(d.tags[k].join(', '), v => d.tags[k] = splitTags(v), { list:'dl-' + k }))),
+      ...(sugOf(d) ? [el('div', { className:'reason wide' + (sugOf(d).keep ? ' keep' : ''), textContent:`Suggestion: ${sugOf(d).cat}. ${sugOf(d).reason}` })] : []),
       el('div', { className:'src wide', textContent:d.source })));
   return r;
 }
@@ -288,7 +303,7 @@ function row(d, index) {
 let dragIds = null;
 function tile(d, index) {
   const t = el('div', { className:'tile' + stateClass(d), draggable:true, title:`${d.title}\n${d.source}` },
-    thumb(d), el('span', { className:'num', textContent:posOf(d.id) + 1 }), el('div', { className:'cap', textContent:d.title }));
+    thumb(d), el('span', { className:'num', textContent:posOf(d.id) + 1 }), ...badge(d), el('div', { className:'cap', textContent:d.title }));
   t.onclick = e => toggleSelect(d, index, e.shiftKey, !selected.has(d.id));
   t.ondragstart = e => {
     dragIds = selected.has(d.id) ? portfolioData.filter(x => selected.has(x.id)).map(x => x.id) : [d.id];
@@ -311,11 +326,18 @@ function tile(d, index) {
 /* ---------- Filtering + paging ---------- */
 function refresh(resetPage = true) {
   const view = $('view').value, folder = $('folder').value, q = $('q').value.trim().toLowerCase();
+  const sugView = view.startsWith('sug');
   shownList = portfolioData.filter(d =>
     (view === 'hidden' ? d.hidden : view === 'del' ? toDelete.has(d.id)
-      : view === 'todo' ? !d.hidden && !toDelete.has(d.id) && !d.tags.process.length && !d.tags.material.length : true) &&
+      : view === 'todo' ? !d.hidden && !toDelete.has(d.id) && !d.tags.process.length && !d.tags.material.length
+      : sugView ? sugOf(d) && (view === 'sug' || sugOf(d).cat === view.slice(4)) : true) &&
     (!folder || folderOf(d) === folder) &&
-    (!q || [d.title, d.description, d.source, ...Object.values(d.tags).flat()].join(' ').toLowerCase().includes(q)));
+    (!q || [d.title, d.description, d.source, ...Object.values(d.tags).flat(), sugOf(d)?.cat ?? ''].join(' ').toLowerCase().includes(q)));
+  if (sugView) { // group near-duplicates together with their KEEP first, so you can compare side by side
+    const key = d => { const g = sugOf(d); return `${g.cat}|${g.group ?? ''}|${g.keep ? 0 : 1}`; };
+    shownList.sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
+  }
+  $('selSug').hidden = !sugView;
   const keep = resetPage ? PAGE : Math.max(rendered, PAGE);
   const y = scrollY;
   rendered = 0;
@@ -345,6 +367,15 @@ function setMode(m) {
 $('modeRows').onclick = () => setMode('rows');
 $('modeTiles').onclick = () => setMode('tiles');
 $('folder').append(...[...new Set(portfolioData.map(folderOf))].sort().map(f => el('option', { value:f, textContent:f })));
+function sugOptions() { // "Suggested" entries in the view menu, with live counts
+  const live = portfolioData.filter(d => sugOf(d) && !sugOf(d).keep);
+  $('view').querySelectorAll('.sugopt').forEach(o => o.remove());
+  if (!Object.keys(SUG).length) return;
+  const cats = [...new Set(portfolioData.filter(sugOf).map(d => sugOf(d).cat))];
+  $('view').append(el('option', { className:'sugopt', value:'sug', textContent:`Suggested removals (${live.length})` }),
+    ...cats.map(c => el('option', { className:'sugopt', value:'sug:' + c, textContent:`  · ${c} (${live.filter(d => sugOf(d).cat === c).length})` })));
+}
+sugOptions();
 ['view', 'folder'].forEach(id => $(id).onchange = () => refresh());
 let qTimer; $('q').oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(refresh, 200); };
 
@@ -361,6 +392,12 @@ function bulk(fn) {
 }
 $('selAll').onclick = () => { shownList.forEach(d => selected.add(d.id)); refresh(false); };
 $('bClear').onclick = () => { selected.clear(); refresh(false); };
+$('selSug').onclick = () => { shownList.filter(d => !sugOf(d).keep).forEach(d => selected.add(d.id)); refresh(false); };
+$('bDismiss').onclick = () => {
+  selIds().forEach(id => dismissed.add(id));
+  try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...dismissed])); } catch {}
+  selected.clear(); const v = $('view').value; sugOptions(); $('view').value = [...$('view').options].some(o => o.value === v) ? v : 'all'; refresh(false);
+};
 $('bAdd').onclick = () => { const k = $('bCat').value, vals = splitTags($('bVal').value);
   if (vals.length) bulk(d => d.tags[k] = [...new Set([...d.tags[k], ...vals])]); };
 $('bRemove').onclick = () => { const k = $('bCat').value, vals = new Set(splitTags($('bVal').value));

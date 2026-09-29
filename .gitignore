@@ -5,3 +5,4 @@ data.js.tmp
 __pycache__/
 prompt.txt
 _archive/
+tools/suggestions.js
