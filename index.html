@@ -13,8 +13,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <script>
-  // Theme before first paint (no light flash): saved choice, else the OS setting.
-  try { document.documentElement.dataset.theme = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch {}
+  // Theme before first paint: the visitor's saved choice, else light.
+  try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light'; } catch {}
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -123,10 +123,6 @@ themeBtn.onclick = () => {
   setTheme(t);
   try { localStorage.setItem('theme', t); } catch {}
 };
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => { // follow the OS until the visitor picks
-  try { if (localStorage.getItem('theme')) return; } catch {}
-  setTheme(e.matches ? 'dark' : 'light');
-});
 const grid = $('div', { className:'grid' });
 const empty = $('p', { className:'empty', textContent:'// No items match the current filter set', hidden:true });
 
