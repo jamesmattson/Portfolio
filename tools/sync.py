@@ -3,6 +3,7 @@
 Run from anywhere:  python tools/sync.py
 Safe to re-run: existing entries are never overwritten, new photos are inserted at random positions.
 Photos deleted in tag.html: web copies removed, originals moved to _archive/ (restore = move back + remove id from deletedIds).
+Originals deleted in Explorer: dropped from the site too (over 25 at once needs --yes, as a safety check).
 """
 import hashlib, json, os, random, shutil, sys
 from PIL import Image, ImageOps
@@ -98,17 +99,25 @@ def render(src, id_):
     return w, h
 
 
+def purge(id_):
+    """Remove a photo's web copies. Returns True if the full-size copy existed."""
+    had = os.path.exists(os.path.join(FULL, id_ + ".jpg"))
+    for folder in (THUMB, FULL):
+        path = os.path.join(folder, id_ + ".jpg")
+        if os.path.exists(path):
+            os.remove(path)
+    return had
+
+
 def main():
+    for _, top in SOURCES:  # a renamed/missing source folder must not look like "every photo was deleted"
+        if not os.path.isdir(os.path.join(ROOT, top)):
+            sys.exit(f"Source folder '{top}' not found. Nothing changed. Rename it back (or fix SOURCES) and re-run.")
     os.makedirs(THUMB, exist_ok=True)
     os.makedirs(FULL, exist_ok=True)
     items, deleted = load()
-    gone, purged = set(deleted), 0
-    for id_ in gone:  # remove web copies of deleted photos so they never get published
-        for folder in (THUMB, FULL):
-            path = os.path.join(folder, id_ + ".jpg")
-            if os.path.exists(path):
-                os.remove(path)
-                purged += folder == FULL
+    gone = set(deleted)
+    purged = sum(purge(id_) for id_ in gone)  # remove web copies of deleted photos so they never get published
     items = [d for d in items if d["id"] not in gone]
     by_id = {d["id"]: d for d in items}
     seen, added, dupes, archived = set(), 0, 0, 0
@@ -142,10 +151,22 @@ def main():
         if added % 50 == 0:
             print(f"  {added} new...")
             save(items, deleted)  # checkpoint so a long first run can be interrupted and resumed
+    # Originals deleted in Explorer: treat as deleted in tag.html (drop from the site, remember the id).
+    missing = [d for d in items if d["id"] not in seen]
+    removed_by_explorer = 0
+    if len(missing) > 25 and "--yes" not in sys.argv:
+        print(f"\n{len(missing)} photos have no original file any more, e.g.:", *[f"  {d['source']}" for d in missing[:5]],
+              "Kept them for now (safety check). If you really deleted them, re-run:  python tools/sync.py --yes\n", sep="\n")
+    else:
+        for d in missing:
+            deleted.append(d["id"])
+            purge(d["id"])
+            print(f"  removed (original deleted): {d['source']}")
+        items = [d for d in items if d["id"] in seen]
+        removed_by_explorer = len(missing)
     save(items, deleted)
-    missing = [d["source"] for d in items if d["id"] not in seen]
-    print(f"{len(items)} items | {added} new | {len(gone)} deleted ({purged} web copies removed, {archived} originals "
-          f"moved to _archive/ this run) | {dupes} exact duplicates skipped | {len(missing)} with no source file (kept)")
+    print(f"{len(items)} items | {added} new | {len(set(deleted))} deleted ({purged} web copies removed, {archived} originals "
+          f"moved to _archive/, {removed_by_explorer} removed because the original was deleted) | {dupes} exact duplicates skipped")
 
 
 if __name__ == "__main__":
