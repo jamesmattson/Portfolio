@@ -70,6 +70,8 @@
   .del img { filter:grayscale(1); }
   .badge { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.05em; padding:2px 5px; color:#fff; background:var(--del); }
   .badge.keep { background:#15803D; }
+  .badge.draft { background:#1D4ED8; }
+  .row.draft { box-shadow:inset 3px 0 0 #1D4ED8; }
   .tile .badge { position:absolute; top:0; right:0; max-width:75%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .reason { font-size:12px; color:var(--del); } .reason.keep { color:#15803D; }
   @media (max-width:800px) { .row { grid-template-columns:28px 1fr; } .row .fields { grid-column:1 / -1; } .fields { grid-template-columns:1fr; } }
@@ -115,6 +117,7 @@
     <button id="bShow" type="button">Show</button>
     <button id="bDelete" class="danger" type="button">Delete</button>
     <button id="bUndelete" type="button">Undo delete</button>
+    <button id="bApprove" type="button" title="Accept the drafted title, tags and description">Approve drafts</button>
     <button id="bDismiss" type="button" title="Hide these suggestions (the photos stay)">Dismiss suggestion</button>
     <button id="bClear" type="button">Deselect</button>
   </div>
@@ -262,12 +265,14 @@ function toggleSelect(d, index, shift, on) {
   lastClicked = index;
   refresh(false);
 }
-const stateClass = d => (selected.has(d.id) ? ' sel' : '') + (d.hidden ? ' hid' : '') + (toDelete.has(d.id) ? ' del' : '');
+const stateClass = d => (selected.has(d.id) ? ' sel' : '') + (d.hidden ? ' hid' : '') + (toDelete.has(d.id) ? ' del' : '') + (d.draft ? ' draft' : '');
 const badge = d => {
   if (toDelete.has(d.id)) return [el('span', { className:'badge', textContent:'Deletes on save' })];
   const g = sugOf(d);
-  return g ? [el('span', { className:'badge' + (g.keep ? ' keep' : ''), textContent:g.keep ? 'Keep' : g.cat, title:g.reason })] : [];
+  if (g) return [el('span', { className:'badge' + (g.keep ? ' keep' : ''), textContent:g.keep ? 'Keep' : g.cat, title:g.reason })];
+  return d.draft ? [el('span', { className:'badge draft', textContent:'Draft', title:'Suggested title/tags/description: approve or edit' })] : [];
 };
+const approve = ids => { ids.forEach(id => delete byId.get(id).draft); changed({ ids }); };
 
 /* ---------- Edit view: one editable row per photo ---------- */
 function row(d, index) {
@@ -279,11 +284,11 @@ function row(d, index) {
     const { tag = 'input', list, ...rest } = attrs;
     const i = el(tag, { value, ...rest });
     if (list) i.setAttribute('list', list); // `list` is read-only as a property
-    i.onchange = () => { onSet(i.value); changed({ ids:[d.id] }); if (list) refreshDatalists(); };
+    i.onchange = () => { onSet(i.value); delete d.draft; r.classList.remove('draft'); changed({ ids:[d.id] }); if (list) refreshDatalists(); };
     return i;
   };
   const company = el('select', {}, ...['Fully', 'Trillium Pacific'].map(c => el('option', { value:c, textContent:c, selected:d.company === c })));
-  company.onchange = () => { d.company = company.value; changed({ ids:[d.id] }); };
+  company.onchange = () => { d.company = company.value; delete d.draft; r.classList.remove('draft'); changed({ ids:[d.id] }); };
   const hidden = el('input', { type:'checkbox', checked:d.hidden });
   hidden.onchange = () => { d.hidden = hidden.checked; changed({ ids:[d.id] }); refresh(false); };
   const pos = el('input', { className:'pos', type:'number', min:1, max:portfolioData.length, value:posOf(d.id) + 1, title:'Position on the site. Type a number + Enter to move.' });
@@ -298,7 +303,8 @@ function row(d, index) {
       field('Title', text(d.title, v => d.title = v.trim())),
       field('Company', company),
       el('div', { className:'line' }, el('span', { className:'meta', textContent:'#' }), pos,
-        el('label', { className:'line' }, hidden, 'Hidden'), del),
+        el('label', { className:'line' }, hidden, 'Hidden'), del,
+        ...(d.draft ? [(() => { const b = el('button', { type:'button', className:'primary', textContent:'Approve draft' }); b.onclick = () => { approve([d.id]); draftOption(); refresh(false); }; return b; })()] : [])),
       field('Description', text(d.description, v => d.description = v.trim(), { tag:'textarea', rows:2 }), 'wide'),
       ...Object.entries(CATS).map(([k, label]) =>
         field(label + ' (comma separated)', text(d.tags[k].join(', '), v => d.tags[k] = splitTags(v), { list:'dl-' + k }))),
@@ -338,7 +344,7 @@ function refresh(resetPage = true) {
   shownList = portfolioData.filter(d =>
     (view === 'hidden' ? d.hidden : view === 'del' ? toDelete.has(d.id)
       : view === 'todo' ? !d.hidden && !toDelete.has(d.id) && !d.tags.process.length && !d.tags.material.length
-      : sugView ? sugOf(d) && (view === 'sug' || sugOf(d).cat === view.slice(4)) : true) &&
+      : sugView ? sugOf(d) && (view === 'sug' || sugOf(d).cat === view.slice(4)) : view === 'draft' ? d.draft : true) &&
     (!folder || folderOf(d) === folder) &&
     (!q || [d.title, d.description, d.source, ...Object.values(d.tags).flat(), sugOf(d)?.cat ?? ''].join(' ').toLowerCase().includes(q)));
   if (sugView) { // group near-duplicates together with their KEEP first, so you can compare side by side
@@ -384,6 +390,13 @@ function sugOptions() { // "Suggested" entries in the view menu, with live count
     ...cats.map(c => el('option', { className:'sugopt', value:'sug:' + c, textContent:`  · ${c} (${live.filter(d => sugOf(d).cat === c).length})` })));
 }
 sugOptions();
+function draftOption() { // "Drafts to review (N)" in the view menu
+  const n = portfolioData.filter(d => d.draft).length;
+  let o = $('view').querySelector('option[value="draft"]');
+  if (!o) { o = el('option', { value:'draft' }); $('view').options[0].after(o); }
+  o.textContent = `Drafts to review (${n})`;
+}
+draftOption();
 ['view', 'folder'].forEach(id => $(id).onchange = () => refresh());
 let qTimer; $('q').oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(refresh, 200); };
 
@@ -401,6 +414,7 @@ function bulk(fn) {
 $('selAll').onclick = () => { shownList.forEach(d => selected.add(d.id)); refresh(false); };
 $('bClear').onclick = () => { selected.clear(); refresh(false); };
 $('selSug').onclick = () => { shownList.filter(d => !sugOf(d).keep).forEach(d => selected.add(d.id)); refresh(false); };
+$('bApprove').onclick = () => { approve(selIds()); draftOption(); refresh(false); };
 $('bDismiss').onclick = () => {
   selIds().forEach(id => dismissed.add(id));
   try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...dismissed])); } catch {}
