@@ -217,9 +217,13 @@ async function save() {
   $('draft').hidden = true;
   const v = $('view').value; sugOptions(); $('view').value = [...$('view').options].some(o => o.value === v) ? v : 'all';
   setStatus();
-  $('status').textContent = `Saved ${new Date().toLocaleTimeString()}` +
-    (window.showSaveFilePicker ? '' : ' (downloaded: move it into the portfolio folder)') +
-    (nDel ? ` · run tools/sync.py to remove ${nDel} deleted image file(s)` : '');
+  const wrongName = fileHandle && fileHandle.name !== 'data.js' ? fileHandle.name : '';
+  if (wrongName) fileHandle = null; // ask again next save, so the right file can be picked
+  $('status').textContent = wrongName
+    ? `⚠ Saved as "${wrongName}". The site only reads data.js: save again and overwrite data.js`
+    : `Saved ${new Date().toLocaleTimeString()}` +
+      (window.showSaveFilePicker ? '' : ' (downloaded: move it into the portfolio folder)') +
+      (nDel ? ` · run tools/sync.py to remove ${nDel} deleted image file(s)` : '');
   refresh(false);
 }
 $('save').onclick = save;
@@ -259,7 +263,11 @@ function toggleSelect(d, index, shift, on) {
   refresh(false);
 }
 const stateClass = d => (selected.has(d.id) ? ' sel' : '') + (d.hidden ? ' hid' : '') + (toDelete.has(d.id) ? ' del' : '');
-const badge = d => { const g = sugOf(d); return g ? [el('span', { className:'badge' + (g.keep ? ' keep' : ''), textContent:g.keep ? 'Keep' : g.cat, title:g.reason })] : []; };
+const badge = d => {
+  if (toDelete.has(d.id)) return [el('span', { className:'badge', textContent:'Deletes on save' })];
+  const g = sugOf(d);
+  return g ? [el('span', { className:'badge' + (g.keep ? ' keep' : ''), textContent:g.keep ? 'Keep' : g.cat, title:g.reason })] : [];
+};
 
 /* ---------- Edit view: one editable row per photo ---------- */
 function row(d, index) {
