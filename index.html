@@ -97,6 +97,11 @@
 <script>
 // portfolioData lives in data.js: run tools/sync.py to add photos, open tools/tag.html to edit.
 const items = portfolioData.filter(d => !d.hidden);
+// Fisher-Yates: new order every page load, stable while filtering.
+for (let i = items.length - 1; i > 0; i--) {
+  const j = Math.floor(Math.random() * (i + 1));
+  [items[i], items[j]] = [items[j], items[i]];
+}
 
 const GROUPS = [
   ["company", "Company", d => [d.company]],
@@ -171,7 +176,7 @@ const cards = new Map(items.map(d => {
   return [d.id, card];
 }));
 
-/* ---------- Masonry: greedy shortest-column, in data order ---------- */
+/* ---------- Masonry: greedy shortest-column, in shuffled order ---------- */
 const colCount = () => { const w = innerWidth; return w < 560 ? 1 : w < 900 ? 2 : w < 1400 ? 3 : 4; };
 
 function layout() {
